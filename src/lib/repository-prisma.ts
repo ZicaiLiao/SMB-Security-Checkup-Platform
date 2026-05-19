@@ -17,6 +17,7 @@ import {
   buildAssessmentComparison,
   buildAssessmentHistory,
   buildAuditEvent,
+  buildRetestTitle,
   googleWorkspaceEvidence,
   nowIso,
   QUESTION_BANK,
@@ -435,6 +436,77 @@ export async function createAssessment(tenantId: string, title: string, actorUse
       createdAt
     }
   });
+  return toAssessmentRecord(assessment);
+}
+
+export async function createRetestAssessment(tenantId: string, sourceAssessmentId: string, actorUserId?: string) {
+  const prisma = await getReadyPrisma();
+  if (!prisma) {
+    return null;
+  }
+
+  const sourceAssessment = await prisma.assessment.findFirst({ where: { id: sourceAssessmentId, tenantId } });
+  if (!sourceAssessment) {
+    throw new Error("ASSESSMENT_NOT_FOUND");
+  }
+
+  const [existingAssessments, sourceAnswers] = await Promise.all([
+    prisma.assessment.findMany({ where: { tenantId }, select: { title: true } }),
+    prisma.answer.findMany({ where: { tenantId, assessmentId: sourceAssessmentId } })
+  ]);
+
+  const createdAt = new Date();
+  const assessmentId = randomUUID();
+  const title = buildRetestTitle(
+    sourceAssessment.title,
+    existingAssessments.map((assessment: { title: string }) => assessment.title)
+  );
+
+  const assessment = await (prisma as any).$transaction(async (tx: any) => {
+    const createdAssessment = await tx.assessment.create({
+      data: {
+        id: assessmentId,
+        tenantId,
+        title,
+        status: sourceAnswers.length > 0 ? "COLLECTING" : "DRAFT",
+        sourceMode: sourceAssessment.sourceMode,
+        createdAt,
+        updatedAt: createdAt
+      }
+    });
+
+    if (sourceAnswers.length > 0) {
+      await tx.answer.createMany({
+        data: sourceAnswers.map((answer: any) => ({
+          id: randomUUID(),
+          tenantId,
+          assessmentId,
+          questionId: answer.questionId,
+          value: answer.value,
+          createdAt,
+          updatedAt: createdAt
+        }))
+      });
+    }
+
+    await tx.auditEvent.create({
+      data: {
+        id: randomUUID(),
+        tenantId,
+        actorUserId: actorUserId ?? null,
+        action: "assessment-retest-created",
+        meta: {
+          assessmentId,
+          sourceAssessmentId,
+          copiedAnswers: String(sourceAnswers.length)
+        },
+        createdAt
+      }
+    });
+
+    return createdAssessment;
+  });
+
   return toAssessmentRecord(assessment);
 }
 

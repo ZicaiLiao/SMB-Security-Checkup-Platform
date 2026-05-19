@@ -18,6 +18,7 @@ import {
   buildAssessmentComparison,
   buildAssessmentHistory,
   buildAuditEvent,
+  buildRetestTitle,
   googleWorkspaceEvidence,
   nowIso,
   QUESTION_BANK,
@@ -137,6 +138,60 @@ export async function createAssessment(tenantId: string, title: string, actorUse
         tenantId,
         actorUserId: actorUserId ?? null,
         meta: { assessmentId: assessment.id, title }
+      })
+    );
+    return assessment;
+  });
+}
+
+export async function createRetestAssessment(tenantId: string, sourceAssessmentId: string, actorUserId?: string) {
+  return mutateState(async (state) => {
+    const sourceAssessment = state.assessments.find((item) => item.id === sourceAssessmentId && item.tenantId === tenantId);
+    if (!sourceAssessment) {
+      throw new Error("ASSESSMENT_NOT_FOUND");
+    }
+
+    const createdAt = nowIso();
+    const title = buildRetestTitle(
+      sourceAssessment.title,
+      state.assessments.filter((item) => item.tenantId === tenantId).map((item) => item.title)
+    );
+    const assessmentId = randomUUID();
+    const clonedAnswers = state.answers
+      .filter((answer) => answer.assessmentId === sourceAssessmentId && answer.tenantId === tenantId)
+      .map((answer) => ({
+        ...answer,
+        id: randomUUID(),
+        assessmentId
+      }));
+    const assessment: AssessmentRecord = {
+      id: assessmentId,
+      tenantId,
+      title,
+      status: clonedAnswers.length > 0 ? "COLLECTING" : "DRAFT",
+      sourceMode: sourceAssessment.sourceMode,
+      createdAt,
+      updatedAt: createdAt
+    };
+
+    state.assessments.push(assessment);
+    state.answers.push(
+      ...clonedAnswers.map((answer) => ({
+        ...answer,
+        assessmentId,
+        updatedAt: createdAt
+      }))
+    );
+    state.auditEvents.push(
+      buildAuditEvent({
+        action: "assessment-retest-created",
+        tenantId,
+        actorUserId: actorUserId ?? null,
+        meta: {
+          assessmentId,
+          sourceAssessmentId,
+          copiedAnswers: String(clonedAnswers.length)
+        }
       })
     );
     return assessment;

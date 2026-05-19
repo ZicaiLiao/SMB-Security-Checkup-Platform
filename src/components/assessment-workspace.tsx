@@ -3,9 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import { buildRequiredProgress, storageLabel } from "@/lib/repository-shared";
 import { AssessmentDashboard, MembershipRecord, Question, TenantRecord } from "@/lib/types";
 import { domainLabel } from "@/lib/scoring";
-import { storageLabel } from "@/lib/repository-shared";
 import { ReportDownloadButton } from "@/components/report-download-button";
 import { StatusPill } from "@/components/status-pill";
 import { TenantSwitcher } from "@/components/tenant-switcher";
@@ -49,6 +49,7 @@ export function AssessmentWorkspace({
   const answersMap = useMemo(() => {
     return new Map(dashboard.answers.map((answer) => [answer.questionId, answer.value.selectedValue]));
   }, [dashboard.answers]);
+  const progress = useMemo(() => buildRequiredProgress(dashboard.questions, dashboard.answers), [dashboard.questions, dashboard.answers]);
 
   async function saveAnswer(question: Question, selectedValue: string) {
     const selectedOption = question.options.find((option) => option.value === selectedValue);
@@ -111,6 +112,28 @@ export function AssessmentWorkspace({
     router.refresh();
   }
 
+  async function createRetest() {
+    setBusyAction("retest");
+    setActionNotice(null);
+    const response = await fetch(`/api/assessments/${dashboard.assessment.id}/retest`, { method: "POST" });
+    let payload: { error?: string; assessment?: { id: string } } | null = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+    if (!response.ok || !payload?.assessment) {
+      setActionNotice({
+        tone: "error",
+        text: payload?.error ?? "复测任务创建失败，请稍后重试。"
+      });
+      setBusyAction(null);
+      return;
+    }
+    router.push(`/assessments/${payload.assessment.id}`);
+    router.refresh();
+  }
+
   async function createTrainingCampaign() {
     setTrainingPending(true);
     await fetch("/api/training-campaigns", {
@@ -169,6 +192,14 @@ export function AssessmentWorkspace({
             </div>
           ) : null}
           <div className="mt-5 flex flex-wrap gap-3">
+            <button
+              className="rounded-full bg-slate-100 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-200 disabled:opacity-60"
+              disabled={busyAction !== null}
+              onClick={createRetest}
+              type="button"
+            >
+              {busyAction === "retest" ? "创建中..." : "发起复测"}
+            </button>
             <button className="rounded-full bg-ink px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60" disabled={busyAction !== null} onClick={() => runAction("integrate")} type="button">
               {busyAction === "integrate" ? "接入中..." : "接入 Google Workspace 样板"}
             </button>
@@ -188,6 +219,10 @@ export function AssessmentWorkspace({
               {actionNotice.text}
             </div>
           ) : null}
+          <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            必答题完成度 {progress.answeredRequired}/{progress.requiredTotal}
+            {progress.missingQuestions.length > 0 ? `，还差 ${progress.missingQuestions.length} 题即可形成完整基线。` : "，当前六大域问卷已全部覆盖。"}
+          </div>
         </div>
         <div className="rounded-[1.5rem] bg-slate-950 p-6 text-white">
           <div className="text-sm uppercase tracking-[0.24em] text-slate-400">Overall Score</div>
@@ -218,7 +253,7 @@ export function AssessmentWorkspace({
 
       <section className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <div className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-3">
             <div className="rounded-[2rem] bg-white p-6 shadow-panel">
               <div className="text-sm font-medium text-slate-500">与上一轮复测对比</div>
               <div className="mt-3 text-3xl font-semibold text-slate-950">
@@ -248,6 +283,26 @@ export function AssessmentWorkspace({
                   </div>
                 ))}
               </div>
+            </div>
+            <div className="rounded-[2rem] bg-white p-6 shadow-panel">
+              <div className="text-sm font-medium text-slate-500">问卷完成度</div>
+              <div className="mt-3 text-3xl font-semibold text-slate-950">
+                {Math.round((progress.answeredRequired / Math.max(progress.requiredTotal, 1)) * 100)}%
+              </div>
+              <div className="mt-2 text-sm text-slate-500">
+                {progress.missingQuestions.length === 0
+                  ? "当前体检的必答题已经全部完成，可以直接复测并重新评分。"
+                  : `还缺 ${progress.missingQuestions.length} 个必答项，优先补齐后再生成正式报告。`}
+              </div>
+              {progress.missingQuestions.length > 0 ? (
+                <div className="mt-4 space-y-2">
+                  {progress.missingQuestions.slice(0, 3).map((question) => (
+                    <div className="rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-600" key={question.id}>
+                      {question.prompt}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </div>
 

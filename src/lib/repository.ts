@@ -29,6 +29,12 @@ export async function createAssessment(tenantId: string, title: string, actorUse
   return (await shouldUsePrismaBackend()) ? prismaRepo.createAssessment(tenantId, title, actorUserId) : demo.createAssessment(tenantId, title, actorUserId);
 }
 
+export async function createRetestAssessment(tenantId: string, sourceAssessmentId: string, actorUserId?: string) {
+  return (await shouldUsePrismaBackend())
+    ? prismaRepo.createRetestAssessment(tenantId, sourceAssessmentId, actorUserId)
+    : demo.createRetestAssessment(tenantId, sourceAssessmentId, actorUserId);
+}
+
 export async function getAssessmentById(tenantId: string, assessmentId: string) {
   return (await shouldUsePrismaBackend()) ? prismaRepo.getAssessmentById(tenantId, assessmentId) : demo.getAssessmentById(tenantId, assessmentId);
 }

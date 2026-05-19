@@ -6,11 +6,20 @@ import {
   AssessmentRecord,
   AuditEventRecord,
   EvidenceRecord,
+  Question,
+  AnswerRecord,
   ScoreSnapshotRecord,
   StorageMode
 } from "@/lib/types";
 
 export { QUESTION_BANK };
+
+function sharedRandomId() {
+  if (typeof globalThis !== "undefined" && globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  return `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 export function nowIso() {
   return new Date().toISOString();
@@ -23,7 +32,7 @@ export function buildAuditEvent(input: {
   meta: Record<string, string>;
 }): AuditEventRecord {
   return {
-    id: crypto.randomUUID(),
+    id: sharedRandomId(),
     action: input.action,
     tenantId: input.tenantId,
     actorUserId: input.actorUserId,
@@ -36,7 +45,7 @@ export function googleWorkspaceEvidence(tenantId: string, assessmentId: string) 
   const createdAt = nowIso();
   return [
     {
-      id: crypto.randomUUID(),
+      id: sharedRandomId(),
       tenantId,
       assessmentId,
       domain: "account_access" as const,
@@ -52,7 +61,7 @@ export function googleWorkspaceEvidence(tenantId: string, assessmentId: string) 
       createdAt
     },
     {
-      id: crypto.randomUUID(),
+      id: sharedRandomId(),
       tenantId,
       assessmentId,
       domain: "email_security" as const,
@@ -150,6 +159,31 @@ export function summarizeTenants(input: {
       latestScore
     };
   });
+}
+
+export function buildRetestTitle(sourceTitle: string, existingTitles: string[]) {
+  const baseTitle = sourceTitle.replace(/\s*[·-]\s*复测\s*\d+$/u, "").replace(/\s*复测\s*\d+$/u, "").trim();
+  const normalizedBaseTitle = baseTitle || "网络安全体检";
+  const existing = new Set(existingTitles);
+  let sequence = 1;
+  let candidate = `${normalizedBaseTitle} · 复测 ${sequence}`;
+  while (existing.has(candidate)) {
+    sequence += 1;
+    candidate = `${normalizedBaseTitle} · 复测 ${sequence}`;
+  }
+  return candidate;
+}
+
+export function buildRequiredProgress(questions: Question[], answers: AnswerRecord[]) {
+  const requiredQuestions = questions.filter((question) => question.required);
+  const answeredQuestionIds = new Set(answers.map((answer) => answer.questionId));
+  const missingQuestions = requiredQuestions.filter((question) => !answeredQuestionIds.has(question.id));
+
+  return {
+    requiredTotal: requiredQuestions.length,
+    answeredRequired: requiredQuestions.length - missingQuestions.length,
+    missingQuestions
+  };
 }
 
 export function storageLabel(mode: StorageMode) {
