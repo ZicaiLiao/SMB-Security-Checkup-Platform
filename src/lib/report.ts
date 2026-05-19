@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 
 import * as fontkit from "fontkit";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
@@ -23,6 +24,7 @@ function pdfDomainLabel(domain: SecurityDomain) {
   return labels[domain];
 }
 
+const REPO_CHINESE_FONT_PATH = path.join(process.cwd(), "public", "fonts", "NotoSansKaithi-Regular.ttf");
 const SYSTEM_CHINESE_FONT_PATH = "/System/Library/Fonts/Supplemental/NotoSansKaithi-Regular.ttf";
 let cachedChineseFontBytes: Uint8Array | null = null;
 
@@ -30,7 +32,11 @@ async function loadChineseFontBytes() {
   if (cachedChineseFontBytes) {
     return cachedChineseFontBytes;
   }
-  cachedChineseFontBytes = await readFile(SYSTEM_CHINESE_FONT_PATH);
+  try {
+    cachedChineseFontBytes = await readFile(REPO_CHINESE_FONT_PATH);
+  } catch {
+    cachedChineseFontBytes = await readFile(SYSTEM_CHINESE_FONT_PATH);
+  }
   return cachedChineseFontBytes;
 }
 
