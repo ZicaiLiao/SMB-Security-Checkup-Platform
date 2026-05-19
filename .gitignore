@@ -1,0 +1,13 @@
+.next
+node_modules
+.local-data
+coverage
+npm-debug.log*
+.env
+tsconfig.tsbuildinfo
+app_bundle.js
+chunk19.js
+chunk60.js
+share_page_bundle.js
+xunlei_share.html
+make_video.py
