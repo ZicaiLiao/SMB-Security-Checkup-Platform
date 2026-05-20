@@ -14,6 +14,7 @@ export function RegisterForm() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();
+  const passwordReady = form.password.length >= 8;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -68,9 +69,10 @@ export function RegisterForm() {
       <div>
         <label className="mb-2 block text-sm font-medium text-slate-700">密码</label>
         <input className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-ocean" onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} type="password" value={form.password} />
+        <div className={`mt-2 text-xs ${passwordReady ? "text-emerald-600" : "text-slate-500"}`}>建议至少 8 位，并包含大小写字母与符号，方便后续切换正式环境。</div>
       </div>
       {error ? <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
-      <button className="w-full rounded-2xl bg-ocean px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:opacity-60" disabled={pending} type="submit">
+      <button className="w-full rounded-2xl bg-ocean px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:opacity-60" disabled={pending || !form.name || !form.email || !form.tenantName || !passwordReady} type="submit">
         {pending ? "创建中..." : "创建企业空间"}
       </button>
     </form>
