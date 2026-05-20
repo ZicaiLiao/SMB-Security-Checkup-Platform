@@ -36,3 +36,16 @@ a {
   color: inherit;
   text-decoration: none;
 }
+
+button,
+input,
+textarea,
+select,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid rgba(15, 118, 110, 0.45);
+  outline-offset: 3px;
+}

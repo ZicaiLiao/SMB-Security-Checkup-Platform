@@ -57,7 +57,7 @@ export function TenantSwitcher({
               onClick={() => switchTenant(tenant.id)}
               type="button"
             >
-              {tenant.name} · {membership?.role ?? "VIEWER"}
+              {active && pending ? "切换中..." : `${tenant.name} · ${membership?.role ?? "VIEWER"}`}
             </button>
           );
         })}
