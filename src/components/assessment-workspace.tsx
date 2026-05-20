@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { ArrowRight, CircleAlert, Sparkles } from "lucide-react";
 
 import { buildRequiredProgress, storageLabel } from "@/lib/repository-shared";
 import { AssessmentDashboard, MembershipRecord, Question, TenantRecord } from "@/lib/types";
@@ -9,6 +10,7 @@ import { domainLabel } from "@/lib/scoring";
 import { ReportDownloadButton } from "@/components/report-download-button";
 import { StatusPill } from "@/components/status-pill";
 import { TenantSwitcher } from "@/components/tenant-switcher";
+import { formatDate } from "@/lib/utils";
 
 function groupedQuestions(questions: Question[]) {
   const groups = new Map<string, Question[]>();
@@ -18,6 +20,39 @@ function groupedQuestions(questions: Question[]) {
     groups.set(question.domain, items);
   }
   return Array.from(groups.entries());
+}
+
+function buildNextStepSummary(input: {
+  missingRequired: number;
+  latestSnapshotScore: number | null;
+  latestReportId: string | null;
+}) {
+  if (input.missingRequired > 0) {
+    return {
+      title: "先补齐问卷基线",
+      description: `还有 ${input.missingRequired} 个必答项未完成，优先把问卷补齐，后续评分和报告会更稳定。`,
+      tone: "amber" as const
+    };
+  }
+  if (input.latestSnapshotScore === null) {
+    return {
+      title: "可以开始运行评分",
+      description: "当前问卷已覆盖完整基线，建议立即运行评分，确认六大域的第一轮风险画像。",
+      tone: "sky" as const
+    };
+  }
+  if (!input.latestReportId) {
+    return {
+      title: "把分数沉淀成正式报告",
+      description: "现在已经有可读分数和发现项，下一步应输出报告，方便客户对齐整改优先级。",
+      tone: "emerald" as const
+    };
+  }
+  return {
+    title: "进入整改与复测阶段",
+    description: "本轮体检已经形成闭环，建议根据报告优先级安排培训、演练和下一次复测。",
+    tone: "slate" as const
+  };
 }
 
 export function AssessmentWorkspace({
@@ -50,6 +85,31 @@ export function AssessmentWorkspace({
     return new Map(dashboard.answers.map((answer) => [answer.questionId, answer.value.selectedValue]));
   }, [dashboard.answers]);
   const progress = useMemo(() => buildRequiredProgress(dashboard.questions, dashboard.answers), [dashboard.questions, dashboard.answers]);
+  const domainSummaries = useMemo(() => {
+    const answeredQuestionIds = new Set(dashboard.answers.map((answer) => answer.questionId));
+    return groupedQuestions(dashboard.questions).map(([domain, questions]) => {
+      const requiredQuestions = questions.filter((question) => question.required);
+      const answeredCount = questions.filter((question) => answeredQuestionIds.has(question.id)).length;
+      const missingRequiredCount = requiredQuestions.filter((question) => !answeredQuestionIds.has(question.id)).length;
+      return {
+        domain,
+        label: domainLabel(domain as Question["domain"]),
+        answeredCount,
+        totalCount: questions.length,
+        missingRequiredCount,
+        score: dashboard.latestSnapshot?.domainScores[domain as Question["domain"]] ?? null
+      };
+    });
+  }, [dashboard.answers, dashboard.latestSnapshot?.domainScores, dashboard.questions]);
+  const nextStep = useMemo(
+    () =>
+      buildNextStepSummary({
+        missingRequired: progress.missingQuestions.length,
+        latestSnapshotScore: dashboard.latestSnapshot?.totalScore ?? null,
+        latestReportId: dashboard.latestReport?.id ?? null
+      }),
+    [dashboard.latestReport?.id, dashboard.latestSnapshot?.totalScore, progress.missingQuestions.length]
+  );
 
   async function saveAnswer(question: Question, selectedValue: string) {
     const selectedOption = question.options.find((option) => option.value === selectedValue);
@@ -223,6 +283,25 @@ export function AssessmentWorkspace({
             必答题完成度 {progress.answeredRequired}/{progress.requiredTotal}
             {progress.missingQuestions.length > 0 ? `，还差 ${progress.missingQuestions.length} 题即可形成完整基线。` : "，当前六大域问卷已全部覆盖。"}
           </div>
+          <div
+            className={`mt-4 rounded-[1.5rem] border px-4 py-4 ${
+              nextStep.tone === "amber"
+                ? "border-amber-200 bg-amber-50 text-amber-900"
+                : nextStep.tone === "sky"
+                  ? "border-sky-200 bg-sky-50 text-sky-900"
+                  : nextStep.tone === "emerald"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                    : "border-slate-200 bg-slate-50 text-slate-800"
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <Sparkles className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                <div className="text-sm font-semibold">{nextStep.title}</div>
+                <div className="mt-1 text-sm leading-6">{nextStep.description}</div>
+              </div>
+            </div>
+          </div>
         </div>
         <div className="rounded-[1.5rem] bg-slate-950 p-6 text-white">
           <div className="text-sm uppercase tracking-[0.24em] text-slate-400">Overall Score</div>
@@ -234,7 +313,7 @@ export function AssessmentWorkspace({
           {dashboard.latestReport ? (
             <div className="mt-6 flex flex-wrap gap-3">
               <div className="w-full text-xs text-slate-300">
-                最近报告生成于 {new Date(dashboard.latestReport.generatedAt).toLocaleString("zh-CN")}
+                最近报告生成于 {formatDate(dashboard.latestReport.generatedAt)}
               </div>
               <a
                 className="inline-flex rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950"
@@ -253,6 +332,52 @@ export function AssessmentWorkspace({
 
       <section className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <div className="space-y-6">
+          <div className="rounded-[2rem] bg-white p-6 shadow-panel">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-950">六大域进展导航</h2>
+                <p className="mt-1 text-sm text-slate-500">先看哪里还没补齐，再决定评分、报告或复测动作。</p>
+              </div>
+              {progress.missingQuestions.length > 0 ? (
+                <div className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                  <CircleAlert className="h-3.5 w-3.5" />
+                  {progress.missingQuestions.length} 个必答项待完成
+                </div>
+              ) : (
+                <div className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">问卷基线已完整</div>
+              )}
+            </div>
+            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {domainSummaries.map((item) => {
+                const completion = Math.round((item.answeredCount / Math.max(item.totalCount, 1)) * 100);
+                return (
+                  <a className="rounded-3xl border border-slate-100 p-4 transition hover:border-slate-200" href={`#domain-${item.domain}`} key={item.domain}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-950">{item.label}</div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          已答 {item.answeredCount}/{item.totalCount}
+                        </div>
+                      </div>
+                      <ArrowRight className="h-4 w-4 text-slate-400" />
+                    </div>
+                    <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full bg-ocean" style={{ width: `${completion}%` }} />
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">域分 {item.score ?? "--"}</span>
+                      {item.missingRequiredCount > 0 ? (
+                        <span className="rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">缺 {item.missingRequiredCount} 个必答项</span>
+                      ) : (
+                        <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700">可进入评分</span>
+                      )}
+                    </div>
+                  </a>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="grid gap-4 md:grid-cols-3">
             <div className="rounded-[2rem] bg-white p-6 shadow-panel">
               <div className="text-sm font-medium text-slate-500">与上一轮复测对比</div>
@@ -307,20 +432,42 @@ export function AssessmentWorkspace({
           </div>
 
           {groupedQuestions(dashboard.questions).map(([domain, questions]) => (
-            <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-panel" key={domain}>
+            <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-panel" id={`domain-${domain}`} key={domain}>
               <div className="mb-5 flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-semibold text-slate-950">{domainLabel(domain as Question["domain"])}</h2>
                   <p className="mt-1 text-sm text-slate-500">每道题的权重会参与六大域独立评分。</p>
                 </div>
-                <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                  域分 {dashboard.latestSnapshot?.domainScores[domain as Question["domain"]] ?? "--"}
+                <div className="flex flex-wrap gap-2">
+                  <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                    域分 {dashboard.latestSnapshot?.domainScores[domain as Question["domain"]] ?? "--"}
+                  </div>
+                  <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                    已答 {questions.filter((question) => answersMap.has(question.id)).length}/{questions.length}
+                  </div>
                 </div>
               </div>
               <div className="space-y-5">
                 {questions.map((question) => (
-                  <div className="rounded-3xl border border-slate-100 p-5" key={question.id}>
-                    <div className="text-sm font-semibold text-slate-900">{question.prompt}</div>
+                  <div
+                    className={`rounded-3xl border p-5 ${
+                      question.required && !answersMap.has(question.id) ? "border-amber-200 bg-amber-50/40" : "border-slate-100"
+                    }`}
+                    key={question.id}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="text-sm font-semibold text-slate-900">{question.prompt}</div>
+                      <div className="flex flex-wrap gap-2">
+                        {question.required ? (
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">必答</span>
+                        ) : null}
+                        {question.required && !answersMap.has(question.id) ? (
+                          <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">待完成</span>
+                        ) : answersMap.has(question.id) ? (
+                          <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">已回答</span>
+                        ) : null}
+                      </div>
+                    </div>
                     <div className="mt-1 text-sm leading-6 text-slate-500">{question.description}</div>
                     <div className="mt-4 grid gap-3">
                       {question.options.map((option) => {
